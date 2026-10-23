@@ -8,7 +8,9 @@ Alur:
   4. Ratakan (flatten) jadi baris per jam, lalu upsert ke cuaca.prakiraan
 
 Aman dijalankan ulang (idempotent): primary key (adm4, waktu_utc, analysis_date)
-mencegah duplikat kalau job jalan dua kali untuk data yang sama.
+mencegah duplikat kalau job jalan dua kali untuk data yang sama. Baris yang muncul lagi
+hanya diperbarui kolom terakhir_dilihat-nya, supaya view prakiraan_terbaru bisa mengambil
+satu snapshot utuh dari fetch terakhir (lihat sql/002_snapshot_terbaru.sql).
 
 Pemakaian:
   DATABASE_URL=postgresql://... python src/ingest.py
@@ -130,12 +132,13 @@ INSERT_PRAKIRAAN = """
 INSERT INTO cuaca.prakiraan (
   adm4, waktu_utc, waktu_lokal, analysis_date, suhu_c, kelembapan_pct, tutupan_awan_pct,
   curah_hujan_mm, kecepatan_angin_kmh, arah_angin, jarak_pandang_m, kode_cuaca,
-  deskripsi_cuaca, fetched_at)
+  deskripsi_cuaca, fetched_at, terakhir_dilihat)
 VALUES (
   %(adm4)s, %(waktu_utc)s, %(waktu_lokal)s, %(analysis_date)s, %(suhu_c)s, %(kelembapan_pct)s,
   %(tutupan_awan_pct)s, %(curah_hujan_mm)s, %(kecepatan_angin_kmh)s, %(arah_angin)s,
-  %(jarak_pandang_m)s, %(kode_cuaca)s, %(deskripsi_cuaca)s, %(fetched_at)s)
-ON CONFLICT (adm4, waktu_utc, analysis_date) DO NOTHING
+  %(jarak_pandang_m)s, %(kode_cuaca)s, %(deskripsi_cuaca)s, %(fetched_at)s, %(fetched_at)s)
+ON CONFLICT (adm4, waktu_utc, analysis_date)
+DO UPDATE SET terakhir_dilihat = EXCLUDED.terakhir_dilihat
 """
 
 

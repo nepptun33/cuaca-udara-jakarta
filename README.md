@@ -37,9 +37,10 @@ flowchart LR
 ## Cara menjalankan
 
 1. Buat database PostgreSQL gratis (misalnya Neon atau Supabase) dan salin connection string-nya.
-2. Buat tabel dan view:
+2. Buat tabel dan view (jalankan berurutan, atau tempel isinya ke SQL editor database):
    ```bash
    psql "$DATABASE_URL" -f sql/001_schema.sql
+   psql "$DATABASE_URL" -f sql/002_snapshot_terbaru.sql
    ```
 3. Isi `config/locations.csv` dengan kode wilayah tingkat kelurahan (adm4).
 4. Jalankan lokal:
@@ -51,13 +52,28 @@ flowchart LR
 5. Untuk jadwal otomatis: simpan `DATABASE_URL` di **Settings → Secrets and variables → Actions**
    repo GitHub, lalu jalankan workflow `ingest-bmkg` sekali secara manual dari tab Actions.
 
+## Temuan dari data asli
+
+**Grid jam prakiraan BMKG bergeser mengikuti waktu request.** Dua fetch berselang 14 menit
+untuk lokasi dan `analysis_date` yang sama mengembalikan grid jam berbeda: 08:00, 11:00, …
+UTC pada fetch pertama, dan 09:00, 12:00, … UTC pada fetch kedua (3 dari 5 lokasi).
+Karena semua baris digabung, satu hari terhitung 16 slot, bukan 8, dan total curah hujan
+menjadi dua kali lipat. Kalau dibiarkan, ini memicu peringatan hujan lebat palsu.
+
+Perbaikannya (`sql/002_snapshot_terbaru.sql`): setiap baris mencatat `terakhir_dilihat`,
+yaitu kapan baris itu terakhir muncul di respons API. View `prakiraan_terbaru` hanya memakai
+satu snapshot utuh, yaitu fetch terakhir per lokasi. Semua versi tetap tersimpan untuk analisis.
+Masalah ini ketahuan dari respons mentah di `raw.bmkg_response`, yang memang disimpan untuk
+keperluan seperti ini.
+
 ## Keputusan desain
 
 - **Respons mentah disimpan.** Kalau logika parsing salah atau format API berubah, data lama bisa
   di-parse ulang tanpa harus mengambil ulang (yang tidak mungkin, karena prakiraan lama hilang dari API).
 - **Prakiraan lama tidak ditimpa.** `analysis_date` masuk primary key, jadi tiap versi prakiraan
   untuk jam yang sama tersimpan. Ini membuka analisis "seberapa akurat prakiraan H-3 dibanding H-1".
-- **Idempotent.** Job yang jalan dua kali tidak membuat data ganda (`ON CONFLICT DO NOTHING`).
+- **Idempotent.** Job yang jalan dua kali tidak membuat data ganda. Baris yang muncul lagi hanya
+  diperbarui kolom `terakhir_dilihat`-nya (`ON CONFLICT DO UPDATE`).
 - **Satu lokasi gagal tidak menggagalkan semua.** Tiap lokasi punya transaksinya sendiri; job baru
   dianggap gagal kalau semua lokasi gagal.
 - **Patuh batas API.** Jeda 1,1 detik antar-request (batas BMKG 60 request/menit), plus retry
