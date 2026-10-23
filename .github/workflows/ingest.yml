@@ -1,0 +1,22 @@
+name: ingest-bmkg
+
+on:
+  schedule:
+    - cron: "15 */6 * * *"   # tiap 6 jam (UTC)
+  workflow_dispatch:          # bisa dijalankan manual dari tab Actions
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - run: python src/ingest.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

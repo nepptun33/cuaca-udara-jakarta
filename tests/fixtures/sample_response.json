@@ -1,0 +1,32 @@
+{
+  "lokasi": {
+    "adm1": "31", "adm2": "31.71", "adm3": "31.71.03", "adm4": "31.71.03.1001",
+    "provinsi": "DKI Jakarta", "kotkab": "Kota Adm. Jakarta Pusat",
+    "kecamatan": "Kemayoran", "desa": "Kemayoran",
+    "lon": 106.8441, "lat": -6.1628, "timezone": "Asia/Jakarta"
+  },
+  "data": [
+    {
+      "lokasi": {"adm4": "31.71.03.1001"},
+      "cuaca": [
+        [
+          {"datetime": "2026-10-23T00:00:00Z", "t": 27, "tcc": 80, "tp": 0.0, "weather": 3,
+           "weather_desc": "Berawan", "wd": "SE", "ws": 6.1, "hu": 82, "vs": 9000,
+           "utc_datetime": "2026-10-23 00:00:00", "local_datetime": "2026-10-23 07:00:00",
+           "analysis_date": "2026-10-22T12:00:00"},
+          {"datetime": "2026-10-23T03:00:00Z", "t": 32, "tcc": 95, "tp": 12.4, "weather": 63,
+           "weather_desc": "Hujan Lebat", "wd": "N", "ws": 9.4, "hu": 70, "vs": 6000,
+           "utc_datetime": "2026-10-23 03:00:00", "local_datetime": "2026-10-23 10:00:00",
+           "analysis_date": "2026-10-22T12:00:00"}
+        ],
+        [
+          {"datetime": "2026-10-24T00:00:00Z", "t": "", "tcc": null, "tp": "n/a", "weather": 1,
+           "weather_desc": "Cerah Berawan", "wd": "E", "ws": 4.0, "hu": 85, "vs": 10000,
+           "utc_datetime": "2026-10-24 00:00:00", "local_datetime": "2026-10-24 07:00:00",
+           "analysis_date": "2026-10-22T12:00:00"},
+          {"t": 30, "utc_datetime": null, "analysis_date": "2026-10-22T12:00:00"}
+        ]
+      ]
+    }
+  ]
+}
