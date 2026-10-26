@@ -9,15 +9,15 @@ Ambang probabilitas dipilih dari prediksi out-of-fold di data latih (bukan dari 
 dengan metrik F2: recall dibobot lebih tinggi daripada precision, karena bagi puskesmas
 peringatan yang terlewat lebih mahal daripada alarm palsu.
 
-Keluaran: reports/hasil_model.md dan reports/kurva_pr.png
+Keluaran: reports/hasil_model.md, reports/kurva_pr.png, dan reports/hasil_model.json
+(dibaca halaman "Model kualitas udara" di dashboard).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import json
+
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -33,18 +33,29 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data/processed/dataset.csv"
 REPORT = ROOT / "reports/hasil_model.md"
+REPORT_JSON = ROOT / "reports/hasil_model.json"
 FIG = ROOT / "reports/kurva_pr.png"
 BATAS_UJI = pd.Timestamp("2025-05-01")
 SEED = 42
-# Dipilih karena unggul di prediksi out-of-fold data latih (PR-AUC 0.20 vs 0.12 untuk gradient
-# boosting). Data latih hanya memuat satu musim kemarau, jadi model sederhana lebih stabil.
+# Model utama: regresi logistik, dipilih dari prediksi out-of-fold data latih (PR-AUC 0.20 vs 0.12 untuk
+# gradient boosting). Data latih hanya memuat satu musim kemarau, jadi model sederhana lebih stabil.
 MODEL_UTAMA = "Logistik, dengan cuaca besok"
+# Versi ringkas untuk simulator dan pembacaan bobot. Fitur lengkap memuat pasangan yang tumpang-tindih
+# (hujan 3 hari s.d. hari ini vs s.d. besok, suhu maksimum hari ini vs besok) yang diberi bobot berlawanan
+# arah, sehingga efek satu fitur tidak bisa dibaca atau digeser sendirian. Di data latih kedua versi setara
+# (out-of-fold PR-AUC 0.193 vs 0.196); di data uji versi ringkas lebih rendah, dan itu dilaporkan apa adanya.
+MODEL_SIMULATOR = "Logistik ringkas, dengan cuaca besok"
 
 FITUR_HARI_INI = [
     "ispu_hari_ini", "ispu_kemarin", "ispu_2hari_lalu", "ispu_rata7", "pm25_hari_ini",
     "bulan_besok", "hari_besok", "musim_kemarau",
     "suhu_maks_hari_ini", "suhu_min_hari_ini", "hujan_mm_hari_ini", "angin_maks_kmh_hari_ini",
     "angin_u_hari_ini", "angin_v_hari_ini", "hujan_3hari_hari_ini",
+]
+FITUR_RINGKAS = [
+    "ispu_hari_ini", "ispu_kemarin", "ispu_rata7", "pm25_hari_ini",
+    "bulan_besok", "hari_besok", "musim_kemarau", "hujan_mm_hari_ini",
+    "hujan_mm_besok", "suhu_maks_besok", "suhu_min_besok", "angin_maks_kmh_besok", "angin_u_besok", "angin_v_besok",
 ]
 FITUR_CUACA_BESOK = [
     "suhu_maks_besok", "suhu_min_besok", "hujan_mm_besok", "angin_maks_kmh_besok",
@@ -82,6 +93,18 @@ def pilih_ambang(model_fn, X: pd.DataFrame, y: pd.Series) -> float:
     return float(kandidat[int(np.argmax(skor))])
 
 
+def fitur_simulator() -> list[str]:
+    return FITUR_RINGKAS
+
+
+def latih_model_simulator(d: pd.DataFrame):
+    """Latih model simulator di periode latih saja, persis seperti saat evaluasi. Dipakai dashboard."""
+    d = d[d["target"].notna()].sort_values(["tanggal", "stasiun"])
+    latih = d[d["tanggal"] < BATAS_UJI]
+    kolom = fitur_simulator() + ["stasiun"]
+    return buat_model("logistik", fitur_simulator()).fit(latih[kolom], latih["target"].astype(int)), latih
+
+
 def nilai(nama: str, y: pd.Series, pred: np.ndarray, prob: np.ndarray | None = None) -> dict:
     return {
         "Pendekatan": nama,
@@ -107,6 +130,7 @@ def main() -> None:
     skenario = [
         ("Logistik, tanpa cuaca besok", "logistik", FITUR_HARI_INI),
         ("Logistik, dengan cuaca besok", "logistik", FITUR_HARI_INI + FITUR_CUACA_BESOK),
+        ("Logistik ringkas, dengan cuaca besok", "logistik", FITUR_RINGKAS),
         ("Gradient boosting, tanpa cuaca besok", "gbm", FITUR_HARI_INI),
         ("Gradient boosting, dengan cuaca besok", "gbm", FITUR_HARI_INI + FITUR_CUACA_BESOK),
     ]
@@ -122,6 +146,8 @@ def main() -> None:
         kurva[nama] = prob
         if nama == MODEL_UTAMA:
             model_utama = (m, kolom, prob >= ambang, prob)
+        if nama == MODEL_SIMULATOR:
+            model_sim = (m, kolom)
 
     tabel = pd.DataFrame(hasil)
     print(tabel.round(3).to_string(index=False))
@@ -149,12 +175,18 @@ def main() -> None:
                      "Alarm palsu": int((~g["y"].astype(bool) & g["pred"]).sum())}), include_groups=False))
     print(per_st)
 
-    imp = permutation_importance(m, uji[kolom], y_uji, scoring="average_precision",
+    # importance dihitung pada versi ringkas: pada fitur lengkap, mengacak satu fitur dari pasangan yang
+    # tumpang-tindih merusak keseimbangan bobot pasangannya, sehingga importance-nya terlihat berlebihan
+    m_sim, kolom_sim = model_sim
+    imp = permutation_importance(m_sim, uji[kolom_sim], y_uji, scoring="average_precision",
                                  n_repeats=10, random_state=SEED)
-    penting = (pd.Series(imp.importances_mean, index=kolom).sort_values(ascending=False).head(8))
+    penting = (pd.Series(imp.importances_mean, index=kolom_sim).sort_values(ascending=False).head(8))
     print(penting.round(4))
 
     # grafik precision-recall
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(7, 5))
     for nama, prob in kurva.items():
         p, r, _ = precision_recall_curve(y_uji, prob)
@@ -175,7 +207,7 @@ def main() -> None:
         f"{y_latih.mean():.1%} positif. Data uji: {len(uji)} baris (Mei-Nov 2025), {y_uji.mean():.1%} positif.\n\n"
         "## Perbandingan pendekatan (data uji)\n\n"
         + tabel.round(3).to_markdown(index=False) + "\n\n"
-        "## Trade-off model utama (logistik, dengan cuaca besok)\n\n"
+        f"## Trade-off model utama ({MODEL_UTAMA.lower()})\n\n"
         "Dibaca dari kurva precision-recall data uji. Sebagai pembanding: aturan musim mencapai recall 0.86 "
         "dengan precision 0.23, persistence recall 0.38 dengan precision 0.39.\n\n"
         + tradeoff.round(3).to_markdown(index=False) + "\n\n"
@@ -185,11 +217,34 @@ def main() -> None:
         + kemarau.round(3).to_markdown(index=False) + "\n\n"
         "## Model utama per stasiun (ambang F2 dari data latih)\n\n"
         + per_st.to_markdown() + "\n\n"
-        "## Fitur paling berpengaruh (permutation importance, PR-AUC)\n\n"
+        "## Fitur paling berpengaruh (permutation importance, PR-AUC, versi ringkas)\n\n"
+        "Dihitung pada versi ringkas. Pada fitur lengkap, pasangan fitur yang tumpang-tindih membuat importance "
+        "per fitur terlihat berlebihan.\n\n"
         + penting.round(4).rename("Penurunan PR-AUC").to_markdown() + "\n\n"
         "![Kurva precision-recall](kurva_pr.png)\n",
         encoding="utf-8")
-    print(f"Laporan: {REPORT.relative_to(ROOT)}")
+    def kurva_ringkas(prob):
+        p, r, _ = precision_recall_curve(y_uji, prob)
+        idx = np.unique(np.linspace(0, len(p) - 1, 120).astype(int))
+        return {"recall": r[idx].round(4).tolist(), "precision": p[idx].round(4).tolist()}
+
+    ambang_utama = float(tabel.loc[tabel["Pendekatan"] == MODEL_UTAMA, "Ambang"].iloc[0])
+    REPORT_JSON.write_text(json.dumps({
+        "model_utama": MODEL_UTAMA,
+        "ambang_utama": ambang_utama,
+        "model_simulator": MODEL_SIMULATOR,
+        "ambang_simulator": float(tabel.loc[tabel["Pendekatan"] == MODEL_SIMULATOR, "Ambang"].iloc[0]),
+        "prauc_simulator": float(tabel.loc[tabel["Pendekatan"] == MODEL_SIMULATOR, "PR-AUC"].iloc[0]),
+        "n_latih": int(len(latih)), "n_uji": int(len(uji)),
+        "positif_latih": float(y_latih.mean()), "positif_uji": float(y_uji.mean()),
+        "perbandingan": json.loads(tabel.round(3).to_json(orient="records")),
+        "tradeoff": json.loads(tradeoff.round(3).to_json(orient="records")),
+        "kemarau": json.loads(kemarau.round(3).to_json(orient="records")),
+        "per_stasiun": json.loads(per_st.reset_index().to_json(orient="records")),
+        "fitur_penting": {k: round(float(v), 4) for k, v in penting.items()},
+        "kurva_pr": {nama: kurva_ringkas(prob) for nama, prob in kurva.items()},
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"Laporan: {REPORT.relative_to(ROOT)} dan {REPORT_JSON.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

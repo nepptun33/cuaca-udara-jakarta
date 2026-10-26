@@ -10,6 +10,7 @@ Data latih: 2377 baris stasiun-hari (s.d. 30 Apr 2025), 7.7% positif. Data uji: 
 | Aturan musim (Mei-Agu = tidak sehat)  |    0.862 |       0.228 | 0.555 |  nan     |          604 |   nan    |
 | Logistik, tanpa cuaca besok           |    0.969 |       0.189 | 0.531 |    0.406 |          820 |     0.27 |
 | Logistik, dengan cuaca besok          |    0.919 |       0.216 | 0.557 |    0.44  |          680 |     0.36 |
+| Logistik ringkas, dengan cuaca besok  |    0.844 |       0.255 | 0.577 |    0.393 |          530 |     0.51 |
 | Gradient boosting, tanpa cuaca besok  |    0.906 |       0.199 | 0.53  |    0.352 |          728 |     0.05 |
 | Gradient boosting, dengan cuaca besok |    0.906 |       0.21  | 0.545 |    0.364 |          691 |     0.06 |
 
@@ -42,17 +43,19 @@ PR-AUC yang jauh di atas proporsi hari tidak sehat berarti model tidak sekadar m
 | DKI4      |                 42 |           41 |            92 |
 | DKI5      |                 45 |           44 |           132 |
 
-## Fitur paling berpengaruh (permutation importance, PR-AUC)
+## Fitur paling berpengaruh (permutation importance, PR-AUC, versi ringkas)
 
-|                    |   Penurunan PR-AUC |
-|:-------------------|-------------------:|
-| hujan_3hari_besok  |             0.0634 |
-| suhu_maks_besok    |             0.0596 |
-| ispu_hari_ini      |             0.0487 |
-| hujan_mm_hari_ini  |             0.0424 |
-| ispu_kemarin       |             0.035  |
-| musim_kemarau      |             0.0343 |
-| suhu_maks_hari_ini |             0.0315 |
-| stasiun            |             0.0214 |
+Dihitung pada versi ringkas. Pada fitur lengkap, pasangan fitur yang tumpang-tindih membuat importance per fitur terlihat berlebihan.
+
+|                      |   Penurunan PR-AUC |
+|:---------------------|-------------------:|
+| ispu_hari_ini        |             0.0538 |
+| stasiun              |             0.0313 |
+| musim_kemarau        |             0.0285 |
+| suhu_maks_besok      |             0.0245 |
+| hujan_mm_hari_ini    |             0.0195 |
+| ispu_kemarin         |             0.0194 |
+| pm25_hari_ini        |             0.0135 |
+| angin_maks_kmh_besok |             0.0106 |
 
 ![Kurva precision-recall](kurva_pr.png)

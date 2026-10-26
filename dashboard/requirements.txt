@@ -1,4 +1,7 @@
 streamlit>=1.50
 pandas>=2.2
+numpy>=1.26
 psycopg[binary]>=3.1
 altair>=5
+scikit-learn>=1.5
+lxml>=5.0

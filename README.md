@@ -35,7 +35,9 @@ flowchart LR
 - [x] **Tahap 1: pipeline.** Ingest terjadwal, skema database, view SQL, test parsing.
 - [x] **Tahap 2: dashboard.** Streamlit, [live di sini](https://cuaca-udara-jakarta-venny.streamlit.app/), membaca data lewat user database read-only.
 - [x] **Tahap 3: model.** Prediksi "besok ISPU tidak sehat?" per stasiun, sebagai proyek pemodelan dan evaluasi
-  (lihat [hasil lengkap](reports/hasil_model.md)). Belum tersambung ke dashboard karena data ISPU publik berhenti di November 2025.
+  (lihat [hasil lengkap](reports/hasil_model.md)). Hasil evaluasi dan simulatornya ada di halaman
+  [Model kualitas udara](https://cuaca-udara-jakarta-venny.streamlit.app/model) di dashboard. Belum dipakai untuk
+  prakiraan harian karena data ISPU publik berhenti di November 2025.
 
 ## Cara menjalankan
 
@@ -90,8 +92,13 @@ Yang dipelajari:
   data uji. Data latih hanya berisi satu musim kemarau, terlalu sedikit untuk model yang lebih rumit.
 - **Nilai tambah model bukan menebak musim.** Aturan kalender sudah tahu Mei sampai Agustus berisiko. Di dalam musim
   kemarau 2025, model mengurutkan hari berisiko dengan PR-AUC 0.49, dibanding proporsi dasar 0.23.
-- **Prakiraan cuaca membantu.** Menambahkan cuaca hari berikutnya menaikkan PR-AUC dari 0.41 ke 0.44. Fitur paling
-  berpengaruh adalah hujan dan suhu maksimum besok: hujan membersihkan partikel di udara.
+- **Prakiraan cuaca membantu, tapi bukan faktor terbesar.** Menambahkan cuaca hari berikutnya menaikkan PR-AUC dari
+  0.41 ke 0.44. Faktor terbesar tetap ISPU beberapa hari terakhir, lalu stasiun, musim, dan suhu maksimum besok.
+- **Fitur yang tumpang-tindih menyesatkan.** Fitur lengkap memuat pasangan yang hampir sama (hujan 3 hari s.d. hari
+  ini vs s.d. besok, suhu maksimum hari ini vs besok) yang diberi bobot berlawanan arah, sehingga efek satu fitur
+  tidak bisa dibaca sendirian. Versi ringkas tanpa pasangan itu setara di validasi data latih (PR-AUC 0.193 vs 0.196)
+  tapi lebih rendah di data uji (0.39 vs 0.44). Model utama tetap versi lengkap sesuai pilihan awal; versi ringkas
+  dipakai untuk membaca bobot, menghitung importance, dan menjalankan simulator di dashboard.
 
 **Keterbatasan:** cuaca besok dalam evaluasi ini adalah pengukuran, dipakai sebagai pengganti prakiraan, jadi hasil
 dengan prakiraan BMKG sungguhan kemungkinan sedikit lebih rendah. Cuaca diambil dari satu titik untuk seluruh Jakarta.
@@ -101,8 +108,13 @@ Jalankan ulang:
 ```bash
 pip install -r model/requirements.txt
 python model/prepare.py
-python model/train.py
+python model/train.py      # menulis reports/hasil_model.md, kurva_pr.png, dan hasil_model.json
 ```
+
+Simulator di dashboard melatih ulang model ringkas dari data mentah setiap kali aplikasi dimulai, dengan kode yang
+sama seperti evaluasi, sehingga tidak bergantung pada file pickle yang rawan rusak antar-versi scikit-learn. Angka
+yang ditampilkan adalah skor risiko, bukan peluang: model dilatih dengan bobot kelas seimbang, sehingga skornya
+cenderung lebih tinggi dari frekuensi sebenarnya.
 
 ## Temuan dari data asli
 
