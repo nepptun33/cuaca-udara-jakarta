@@ -1,5 +1,7 @@
 # Peringatan Dini Cuaca dan Kualitas Udara Jakarta
 
+**Dashboard live:** https://cuaca-udara-jakarta-venny.streamlit.app/
+
 Proyek pribadi end-to-end: mengambil data cuaca secara terjadwal dari API publik BMKG,
 menyimpannya di database, mengolahnya dengan SQL, lalu menampilkannya sebagai
 dashboard peringatan. Tahap akhirnya adalah model prediksi kualitas udara.
@@ -24,15 +26,16 @@ flowchart LR
   B --> D[(cuaca.prakiraan)]
   D --> E[view prakiraan_terbaru]
   E --> F[view ringkasan_harian]
-  F --> G[Dashboard Streamlit]
-  H[Data ISPU + cuaca historis] --> I[Model prediksi] --> G
+  F -->|user read-only| G[Dashboard Streamlit]
+  H[ISPU 2024-2025 + cuaca historis] --> I[model/prepare.py] --> J[model/train.py] --> K[reports/hasil_model.md]
 ```
 
 ## Tahapan
 
 - [x] **Tahap 1: pipeline.** Ingest terjadwal, skema database, view SQL, test parsing.
-- [ ] **Tahap 2: dashboard.** Streamlit, dipublikasikan agar bisa dibuka siapa saja.
-- [ ] **Tahap 3: model.** Prediksi kategori ISPU besok dari data cuaca dan ISPU historis.
+- [x] **Tahap 2: dashboard.** Streamlit, [live di sini](https://cuaca-udara-jakarta-venny.streamlit.app/), membaca data lewat user database read-only.
+- [x] **Tahap 3: model.** Prediksi "besok ISPU tidak sehat?" per stasiun, sebagai proyek pemodelan dan evaluasi
+  (lihat [hasil lengkap](reports/hasil_model.md)). Belum tersambung ke dashboard karena data ISPU publik berhenti di November 2025.
 
 ## Cara menjalankan
 
@@ -49,8 +52,57 @@ flowchart LR
    pytest -q
    DATABASE_URL="postgresql://..." python src/ingest.py
    ```
-5. Untuk jadwal otomatis: simpan `DATABASE_URL` di **Settings → Secrets and variables → Actions**
+5. Dashboard: jalankan `sql/003_role_dashboard.sql` (ganti password-nya dulu), salin
+   `.streamlit/secrets.toml.example` menjadi `.streamlit/secrets.toml` dan isi koneksi user
+   `dashboard_reader`, lalu:
+   ```bash
+   pip install -r dashboard/requirements.txt
+   streamlit run dashboard/app.py
+   ```
+   Untuk versi online, deploy `dashboard/app.py` di Streamlit Community Cloud dan isi secrets yang sama.
+6. Untuk jadwal otomatis: simpan `DATABASE_URL` di **Settings → Secrets and variables → Actions**
    repo GitHub, lalu jalankan workflow `ingest-bmkg` sekali secara manual dari tab Actions.
+
+## Tahap 3: prediksi kualitas udara besok
+
+**Pertanyaan:** apakah ISPU di stasiun X besok akan melewati 100 (kategori *tidak sehat*)? Satu stasiun ISPU
+ada di tiap kota administrasi, sama dengan lima lokasi pipeline cuaca.
+
+**Data:** ISPU harian 5 stasiun DKI, Januari 2024 s.d. November 2025 (Satu Data Jakarta), digabung dengan cuaca
+harian terukur (Open-Meteo). Latih s.d. April 2025, uji Mei s.d. November 2025, dibagi berdasarkan waktu.
+
+**Pembersihan data** (`model/prepare.py`, diuji di `tests/test_prepare.py`): file `.xls` dari portal ternyata tabel
+HTML; 8 variasi nama untuk 5 stasiun; tanggal 31 September; data kosong ditulis sebagai `0` atau "TIDAK ADA DATA";
+21 baris kategori tidak cocok dengan angkanya (kategori dihitung ulang dari ambang resmi); dan nilai yang identik
+5 sampai 13 hari berturut-turut di akhir 2024 (kemungkinan sensor macet, dibuang dari pelatihan).
+
+**Hasil di data uji** (rincian di [reports/hasil_model.md](reports/hasil_model.md)):
+
+| Pendekatan | Recall | Precision |
+|---|---|---|
+| Persistence (besok = hari ini) | 0.38 | 0.39 |
+| Aturan musim (Mei-Agu = tidak sehat) | 0.86 | 0.23 |
+| Regresi logistik + cuaca besok, pada recall 0.50 | 0.50 | 0.45 |
+| Regresi logistik + cuaca besok, pada recall 0.70 | 0.70 | 0.35 |
+
+Yang dipelajari:
+- **Model sederhana menang.** Regresi logistik mengalahkan gradient boosting, baik di validasi data latih maupun di
+  data uji. Data latih hanya berisi satu musim kemarau, terlalu sedikit untuk model yang lebih rumit.
+- **Nilai tambah model bukan menebak musim.** Aturan kalender sudah tahu Mei sampai Agustus berisiko. Di dalam musim
+  kemarau 2025, model mengurutkan hari berisiko dengan PR-AUC 0.49, dibanding proporsi dasar 0.23.
+- **Prakiraan cuaca membantu.** Menambahkan cuaca hari berikutnya menaikkan PR-AUC dari 0.41 ke 0.44. Fitur paling
+  berpengaruh adalah hujan dan suhu maksimum besok: hujan membersihkan partikel di udara.
+
+**Keterbatasan:** cuaca besok dalam evaluasi ini adalah pengukuran, dipakai sebagai pengganti prakiraan, jadi hasil
+dengan prakiraan BMKG sungguhan kemungkinan sedikit lebih rendah. Cuaca diambil dari satu titik untuk seluruh Jakarta.
+Data ISPU publik berhenti di November 2025, sehingga model belum bisa dijalankan harian.
+
+Jalankan ulang:
+```bash
+pip install -r model/requirements.txt
+python model/prepare.py
+python model/train.py
+```
 
 ## Temuan dari data asli
 
@@ -78,6 +130,9 @@ keperluan seperti ini.
   dianggap gagal kalau semua lokasi gagal.
 - **Patuh batas API.** Jeda 1,1 detik antar-request (batas BMKG 60 request/menit), plus retry
   dengan backoff untuk error sementara.
+- **Dashboard memakai user read-only.** Dashboard bisa dibuka siapa saja, jadi koneksinya hanya punya
+  hak `SELECT` di schema `cuaca` dan tidak bisa membaca respons mentah di schema `raw`. Kalau kredensialnya
+  bocor, data tetap tidak bisa diubah atau dihapus. Semua kredensial disimpan di secrets, tidak pernah di Git.
 - **PostgreSQL, bukan database proprietary.** Supaya siapa pun bisa menjalankan ulang proyek ini gratis.
   Polanya sama untuk Oracle (`python-oracledb` + `MERGE`).
 
@@ -90,6 +145,9 @@ keperluan seperti ini.
 - GitHub menonaktifkan jadwal workflow di repo publik yang 60 hari tidak ada aktivitas.
 
 ## Sumber data
+
+ISPU harian DKI Jakarta: **Satu Data Jakarta** (data mentah di `data/raw/`). Cuaca historis: **Open-Meteo**
+Historical Weather API (open-meteo.com), lisensi CC BY 4.0.
 
 Prakiraan cuaca: **BMKG (Badan Meteorologi, Klimatologi, dan Geofisika)**, melalui API publik
 `api.bmkg.go.id`. Sesuai ketentuan BMKG, sumber data wajib dicantumkan di aplikasi yang memakainya.

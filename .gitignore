@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .venv/
 .streamlit/secrets.toml
+data/processed/
+data/processed/
