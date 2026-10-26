@@ -6,7 +6,7 @@ Proyek pribadi end-to-end: mengambil data cuaca secara terjadwal dari API publik
 menyimpannya di database, mengolahnya dengan SQL, lalu menampilkannya sebagai
 dashboard peringatan. Tahap akhirnya adalah model prediksi kualitas udara.
 
-## For Who?
+## Untuk siapa
 
 Pengguna yang dibayangkan: **petugas promosi kesehatan di puskesmas Jakarta**.
 Mereka perlu tahu 2–3 hari sebelumnya kapan wilayahnya akan mengalami hujan lebat,
